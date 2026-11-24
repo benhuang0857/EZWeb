@@ -33,3 +33,11 @@ class WpCliCommand(BaseModel):
 class CleanupExecuteRequest(BaseModel):
     # None = all categories. See app/sites/service.py::_CLEANUP_CATEGORIES.
     categories: list[str] | None = None
+
+
+class BackupSchedule(BaseModel):
+    # off / daily / weekly. hour = hour of day (0-23, server local time).
+    # keep = how many automatic backups to retain.
+    schedule: str
+    hour: int = 3
+    keep: int = 5

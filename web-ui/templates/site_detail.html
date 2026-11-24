@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% block title %}{{ site.display_name }} — EZWeb{% endblock %}
+{% block content %}
+{% set host = public_host or request.url.hostname %}
+
+<a href="/" class="back-link">← 所有站台</a>
+
+<div class="page-header detail-header">
+  <div>
+    <h2>{{ site.display_name }} {% include "partials/status_badge.html" %} {% include "partials/stage_badge.html" %}</h2>
+    <div class="site-id">{{ site.id }}　·　母版 {{ site.template_id }}</div>
+  </div>
+  {% if site.status == "running" %}
+  <div class="actions">
+    <a class="btn btn-outline" target="_blank" href="http://{{ host }}:{{ site.wp_port }}/">開啟網站 ↗</a>
+    <a class="btn btn-outline" target="_blank" href="http://{{ host }}:{{ site.wp_port }}/wp-admin/">WordPress 後台 ↗</a>
+    <a class="btn btn-outline" target="_blank" href="http://{{ host }}:{{ site.pma_port }}/">phpMyAdmin ↗</a>
+  </div>
+  {% endif %}
+</div>
+
+{% if site.status != "running" %}
+<div class="alert alert-warning">
+  這個站台目前不是「運行中」，外掛管理、健康檢查和備份都需要站台運行中才能使用。已完成的備份仍可下載。
+</div>
+{% endif %}
+
+<!-- ── Health ─────────────────────────────────────────────────────── -->
+<section class="card">
+  <div class="card-head">
+    <div>
+      <h3 class="card-title">健康檢查</h3>
+      <p class="text-muted">網站回應、版本、資料庫與磁碟等指標。綠燈正常、黃燈建議處理、紅燈需要處理。</p>
+    </div>
+    {% if site.status == "running" %}
+    <button class="btn btn-outline btn-sm"
+            hx-get="/sites/{{ site.id }}/health"
+            hx-target="#health-body" hx-swap="innerHTML"
+            hx-disabled-elt="this">
+      <span class="spinner busy-only"></span>重新檢查
+    </button>
+    {% endif %}
+  </div>
+  <div id="health-body"
+       {% if site.status == "running" %}
+       hx-get="/sites/{{ site.id }}/health" hx-trigger="load" hx-swap="innerHTML"
+       {% endif %}>
+    {% if site.status == "running" %}
+      <p class="loading"><span class="spinner"></span>檢查中，大約需要 10–15 秒…</p>
+    {% else %}
+      <p class="text-muted">站台未運行，無法檢查。</p>
+    {% endif %}
+  </div>
+</section>
+
+<!-- ── Plugins ────────────────────────────────────────────────────── -->
+<section class="card">
+  <div class="card-head">
+    <div>
+      <h3 class="card-title">外掛</h3>
+      <p class="text-muted">這個站台已安裝的外掛，可以在這裡啟用或停用。</p>
+    </div>
+    {% if site.status == "running" %}
+    <button class="btn btn-outline btn-sm"
+            hx-get="/sites/{{ site.id }}/plugins"
+            hx-target="#plugins-body" hx-swap="innerHTML"
+            hx-disabled-elt="this">
+      <span class="spinner busy-only"></span>重新整理
+    </button>
+    {% endif %}
+  </div>
+  <!-- Progress / result of "全部更新"; lives outside #plugins-body so it
+       survives the list being redrawn. -->
+  <div id="plugins-bulk"></div>
+  <div id="plugins-body"
+       {% if site.status == "running" %}
+       hx-get="/sites/{{ site.id }}/plugins" hx-trigger="load" hx-swap="innerHTML"
+       {% endif %}>
+    {% if site.status == "running" %}
+      <p class="loading"><span class="spinner"></span>讀取外掛清單…</p>
+    {% else %}
+      <p class="text-muted">站台未運行，無法讀取外掛。</p>
+    {% endif %}
+  </div>
+</section>
+
+<!-- ── Backups ────────────────────────────────────────────────────── -->
+<section class="card">
+  <div class="card-head">
+    <div>
+      <h3 class="card-title">備份（All-in-One WP Migration 匯出）</h3>
+      <p class="text-muted">
+        把整個站台匯出成 <code>.wpress</code> 檔。可以手動執行，也可以設定自動排程；備份檔可下載，或存成母版用來建立新站台。
+      </p>
+    </div>
+  </div>
+  <div id="backups-body">
+    {% include "partials/site_backups.html" %}
+  </div>
+</section>
+
+<script>
+  // "全部更新": update the plugins one at a time so progress can be shown and
+  // one failure (typically a premium plugin without a licence) doesn't stop
+  // the rest. Leaving the page stops after the plugin currently updating.
+  async function ezUpdateAllPlugins(btn) {
+    if (!confirm(btn.dataset.confirm)) return;
+    const site = btn.dataset.site;
+    const slugs = JSON.parse(btn.dataset.plugins);
+    const box = document.getElementById('plugins-bulk');
+    const body = document.getElementById('plugins-body');
+    body.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+
+    const status = document.createElement('div');
+    status.className = 'alert alert-warning';
+    box.replaceChildren(status);
+
+    const failed = [];
+    let done = 0;
+    for (const slug of slugs) {
+      status.innerHTML = '<span class="spinner"></span>';
+      status.append(`正在更新 ${done + 1} / ${slugs.length}：${slug}（請不要關閉這個頁面）`);
+      let ok = false, message = '';
+      try {
+        const r = await fetch(`/sites/${encodeURIComponent(site)}/plugins/${encodeURIComponent(slug)}/update?json=1`,
+                              { method: 'POST' });
+        const j = await r.json();
+        ok = j.ok; message = j.message || '';
+      } catch (e) {
+        message = '連線失敗或伺服器沒有回應';
+      }
+      if (!ok) failed.push({ slug, message });
+      done += 1;
+    }
+
+    const result = document.createElement('div');
+    result.className = 'alert ' + (failed.length ? 'alert-warning' : 'alert-success');
+    const head = document.createElement('div');
+    head.textContent = `更新完成：成功 ${slugs.length - failed.length} 個` +
+                       (failed.length ? `，失敗 ${failed.length} 個。` : '。');
+    result.append(head);
+    if (failed.length) {
+      const ul = document.createElement('ul');
+      ul.className = 'bulk-failures';
+      for (const f of failed) {
+        const li = document.createElement('li');
+        const name = document.createElement('strong');
+        name.textContent = f.slug;
+        li.append(name, '：' + f.message);
+        ul.append(li);
+      }
+      result.append(ul);
+    }
+    box.replaceChildren(result);
+    htmx.ajax('GET', `/sites/${encodeURIComponent(site)}/plugins`, { target: '#plugins-body', swap: 'innerHTML' });
+  }
+
+  // Client-side filter for the plugin table.
+  function ezFilterPlugins(input) {
+    const q = input.value.trim().toLowerCase();
+    document.querySelectorAll('#plugins-body tbody tr').forEach((tr) => {
+      tr.style.display = !q || tr.dataset.search.includes(q) ? '' : 'none';
+    });
+  }
+</script>
+{% endblock %}

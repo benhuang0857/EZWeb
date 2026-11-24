@@ -14,8 +14,28 @@ def run_pending_migrations() -> None:
         cur = conn.cursor()
         _migrate_stage_domains(cur)
         _migrate_site_api_key(cur)
+        _migrate_backup_schedule(cur)
     finally:
         conn.close()
+
+
+def _migrate_backup_schedule(cur: sqlite3.Cursor) -> None:
+    """Per-site automatic backup settings. (The `backups` table itself is new
+    and is created by Base.metadata.create_all — only columns added to an
+    existing table need a migration here.)"""
+    cols = {row[1] for row in cur.execute("PRAGMA table_info(sites)")}
+    if "backup_schedule" in cols:
+        return  # already migrated
+    cur.execute("BEGIN IMMEDIATE")
+    try:
+        cur.execute("ALTER TABLE sites ADD COLUMN backup_schedule TEXT NOT NULL DEFAULT 'off'")
+        cur.execute("ALTER TABLE sites ADD COLUMN backup_hour INTEGER NOT NULL DEFAULT 3")
+        cur.execute("ALTER TABLE sites ADD COLUMN backup_keep INTEGER NOT NULL DEFAULT 5")
+        cur.execute("ALTER TABLE sites ADD COLUMN backup_schedule_at DATETIME")
+        cur.execute("COMMIT")
+    except Exception:
+        cur.execute("ROLLBACK")
+        raise
 
 
 def _migrate_stage_domains(cur: sqlite3.Cursor) -> None:

@@ -53,6 +53,17 @@ class Site(Base):
     # NULL until rotate-key is called; existing sites backfill via that endpoint.
     api_key_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
+    # Automatic backups (app/sites/backups.py). schedule: off / daily / weekly.
+    # backup_hour is the hour of day (0-23, server local time) to run at.
+    # backup_keep = how many *automatic* backups to retain (manual ones are
+    # never pruned). backup_schedule_at = when the schedule was last saved,
+    # so a freshly enabled schedule waits for its next slot instead of firing
+    # immediately.
+    backup_schedule: Mapped[str] = mapped_column(String(16), default="off", server_default="off")
+    backup_hour: Mapped[int] = mapped_column(Integer, default=3, server_default="3")
+    backup_keep: Mapped[int] = mapped_column(Integer, default=5, server_default="5")
+    backup_schedule_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -60,6 +71,29 @@ class Site(Base):
     logs: Mapped[list["OperationLog"]] = relationship(
         "OperationLog", back_populates="site", cascade="all, delete-orphan"
     )
+    backups: Mapped[list["Backup"]] = relationship(
+        "Backup", back_populates="site", cascade="all, delete-orphan"
+    )
+
+
+class Backup(Base):
+    """One All-in-One WP Migration export (.wpress) of a site, stored on the
+    host under settings.BACKUP_DIR/<site_id>/<filename>."""
+    __tablename__ = "backups"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    site_id: Mapped[str] = mapped_column(String(64), ForeignKey("sites.id", ondelete="CASCADE"), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="running")
+    # statuses: running / success / failed
+    trigger: Mapped[str] = mapped_column(String(16), default="manual")
+    # triggers: manual / auto
+    filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    size: Mapped[int | None] = mapped_column(Integer, nullable=True)  # bytes
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    site: Mapped["Site"] = relationship("Site", back_populates="backups")
 
 
 class PortReservation(Base):

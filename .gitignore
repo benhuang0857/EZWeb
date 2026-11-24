@@ -14,3 +14,6 @@ __pycache__/
 *.pyc
 # paid third-party plugin — keep locally, never publish
 /plugin/elementor-pro*.zip
+
+# site backups (.wpress exports, see web-ui/app/sites/backups.py)
+/backups/

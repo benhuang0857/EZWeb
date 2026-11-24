@@ -10,14 +10,17 @@ Two auth tiers (see app/auth/api_key.py):
                             site or the fleet-admin actions above.
 """
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app.api.schemas import CleanupExecuteRequest, DomainsUpdate, SiteCreate, StageUpdate, WpCliCommand
+from app.api.schemas import (
+    BackupSchedule, CleanupExecuteRequest, DomainsUpdate, SiteCreate, StageUpdate, WpCliCommand,
+)
 from app.api.wpcli_whitelist import check_wpcli_args
 from app.auth.api_key import require_api_key, require_site_api_key
 from app.database import get_db
 from app.models import Site, User
-from app.sites import service
+from app.sites import backups, health, plugins, service
 
 router = APIRouter(prefix="/api/sites", tags=["api"])
 
@@ -202,9 +205,139 @@ async def cleanup_execute(
 @router.get("/{site_id}/health")
 async def site_health(site: Site = Depends(require_site_api_key), db: Session = Depends(get_db)):
     try:
-        return await service.check_health(db, site, site.owner_id)
+        return await health.check_health(db, site, site.owner_id)
     except ValueError as e:
         raise HTTPException(400, str(e))
+
+
+# ── Plugins ──────────────────────────────────────────────────────────────────
+
+@router.get("/{site_id}/plugins")
+async def list_plugins(site: Site = Depends(require_site_api_key), db: Session = Depends(get_db)):
+    """Installed plugins with their status, version and available update."""
+    try:
+        return await plugins.list_plugins(db, site, site.owner_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except RuntimeError as e:
+        raise HTTPException(502, str(e))
+
+
+async def _set_plugin_active(db: Session, site: Site, slug: str, active: bool) -> dict:
+    try:
+        plugin, _all = await plugins.set_plugin_active(db, site, site.owner_id, slug, active)
+        return plugin
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except RuntimeError as e:
+        raise HTTPException(502, str(e))
+
+
+@router.post("/{site_id}/plugins/{slug}/activate")
+async def activate_plugin(slug: str, site: Site = Depends(require_site_api_key), db: Session = Depends(get_db)):
+    return await _set_plugin_active(db, site, slug, True)
+
+
+@router.post("/{site_id}/plugins/{slug}/deactivate")
+async def deactivate_plugin(slug: str, site: Site = Depends(require_site_api_key), db: Session = Depends(get_db)):
+    return await _set_plugin_active(db, site, slug, False)
+
+
+@router.post("/{site_id}/plugins/update-all")
+async def update_all_plugins(site: Site = Depends(require_site_api_key), db: Session = Depends(get_db)):
+    """Updates every plugin that has an update available. Synchronous and
+    slow (minutes on a site with many plugins) — use a generous client
+    timeout. Plugins that fail (typically premium ones without a license) are
+    listed in "results" with updated=false; the call itself still succeeds."""
+    try:
+        result = await plugins.update_all_plugins(db, site, site.owner_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except RuntimeError as e:
+        raise HTTPException(502, str(e))
+    return {k: result[k] for k in ("results", "updated", "failed")}
+
+
+@router.post("/{site_id}/plugins/{slug}/update")
+async def update_plugin(slug: str, site: Site = Depends(require_site_api_key), db: Session = Depends(get_db)):
+    try:
+        result = await plugins.update_plugin(db, site, site.owner_id, slug)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except RuntimeError as e:
+        raise HTTPException(502, str(e))
+    return {k: result[k] for k in ("plugin", "old_version", "new_version", "updated")}
+
+
+# ── Backups (All-in-One WP Migration exports) ───────────────────────────────
+
+def _backup_or_404(db: Session, site: Site, backup_id: int):
+    backup = backups.get_backup(db, site, backup_id)
+    if not backup:
+        raise HTTPException(404, "Backup not found")
+    return backup
+
+
+@router.get("/{site_id}/backups")
+def list_backups(site: Site = Depends(require_site_api_key), db: Session = Depends(get_db)):
+    return [backups.serialize(b) for b in backups.list_backups(db, site)]
+
+
+@router.post("/{site_id}/backups", status_code=202)
+def create_backup(
+    background_tasks: BackgroundTasks,
+    site: Site = Depends(require_site_api_key),
+    db: Session = Depends(get_db),
+):
+    """Starts an export and returns immediately with status "running" — poll
+    GET /{site_id}/backups/{backup_id} until it is "success" or "failed"."""
+    try:
+        backup = backups.start_backup(db, site, trigger="manual")
+    except backups.BackupError as e:
+        raise HTTPException(409, str(e))
+    background_tasks.add_task(backups.run_backup_task, backup.id)
+    return backups.serialize(backup)
+
+
+@router.get("/{site_id}/backups/schedule")
+def get_backup_schedule(site: Site = Depends(require_site_api_key)):
+    return backups.schedule_info(site)
+
+
+@router.put("/{site_id}/backups/schedule")
+def set_backup_schedule(
+    body: BackupSchedule,
+    site: Site = Depends(require_site_api_key),
+    db: Session = Depends(get_db),
+):
+    try:
+        backups.update_schedule(db, site, body.schedule, body.hour, body.keep)
+    except backups.BackupError as e:
+        raise HTTPException(400, str(e))
+    return backups.schedule_info(site)
+
+
+@router.get("/{site_id}/backups/{backup_id}")
+def get_backup(backup_id: int, site: Site = Depends(require_site_api_key), db: Session = Depends(get_db)):
+    return backups.serialize(_backup_or_404(db, site, backup_id))
+
+
+@router.get("/{site_id}/backups/{backup_id}/download")
+def download_backup(backup_id: int, site: Site = Depends(require_site_api_key), db: Session = Depends(get_db)):
+    backup = _backup_or_404(db, site, backup_id)
+    path = backups.backup_file(backup)
+    if path is None:
+        raise HTTPException(404, "這個備份沒有可下載的檔案")
+    return FileResponse(path, filename=backup.filename, media_type="application/octet-stream")
+
+
+@router.delete("/{site_id}/backups/{backup_id}", status_code=204)
+def delete_backup(backup_id: int, site: Site = Depends(require_site_api_key), db: Session = Depends(get_db)):
+    backup = _backup_or_404(db, site, backup_id)
+    try:
+        backups.delete_backup(db, backup)
+    except backups.BackupError as e:
+        raise HTTPException(409, str(e))
 
 
 @router.post("/{site_id}/plugins/install-zip")

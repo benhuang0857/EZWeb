@@ -38,3 +38,47 @@ before creating a site.
 Default login: `admin` / `admin` — change it immediately.
 
 Nginx/certbot setup for a site's domain is applied manually.
+
+## Managing a site
+
+Each site has a **管理** page (`/sites/<id>`) with three sections. Everything
+on it is also available through the JSON API, authenticated with that site's
+API key (`Authorization: Bearer <key>`; mint one with
+`POST /api/sites/<id>/rotate-key` using the fleet `API_KEY`).
+
+**Plugins** — installed plugins with status, version and available updates;
+activate / deactivate / update (one, or all that have an update). Premium
+plugins whose package can't be downloaded without a licence fail to update
+and are reported as such.
+
+| | |
+|---|---|
+| `GET /api/sites/<id>/plugins` | List plugins |
+| `POST /api/sites/<id>/plugins/<slug>/activate` | Activate |
+| `POST /api/sites/<id>/plugins/<slug>/deactivate` | Deactivate |
+| `POST /api/sites/<id>/plugins/<slug>/update` | Update one plugin |
+| `POST /api/sites/<id>/plugins/update-all` | Update all (synchronous, can take minutes) |
+
+**Health check** — `GET /api/sites/<id>/health` returns an `overall` light
+(`ok` / `warn` / `fail`) and a `checks` list, each with a `value` and its own
+`status`: containers, HTTP response and time, WordPress / PHP version, core
+file integrity, pending plugin and theme updates, database size, autoloaded
+options, debug mode, search-engine visibility, wp-content size, host disk and
+the age of the last backup.
+
+**Backups** — full-site All-in-One WP Migration exports (`.wpress`), run by
+hand or on a schedule (daily / weekly at a chosen hour, keeping the newest N
+automatic backups). Files are stored on the host in `backups/<id>/` (override
+with `BACKUP_DIR` in `web-ui/.env`), can be downloaded, and can be saved as a
+site template to clone the site.
+
+| | |
+|---|---|
+| `GET /api/sites/<id>/backups` | List backups |
+| `POST /api/sites/<id>/backups` | Start one (returns `202`, status `running`) |
+| `GET /api/sites/<id>/backups/<n>` | Status of one backup |
+| `GET /api/sites/<id>/backups/<n>/download` | Download the `.wpress` |
+| `DELETE /api/sites/<id>/backups/<n>` | Delete |
+| `GET` / `PUT /api/sites/<id>/backups/schedule` | `{"schedule": "off\|daily\|weekly", "hour": 3, "keep": 5}` |
+
+Interactive API docs: `/docs`.

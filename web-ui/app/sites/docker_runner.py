@@ -14,7 +14,7 @@ from app.config import settings
 TIMEOUT = 600  # seconds – building wpcli image + wp restore can take a while
 
 
-async def _run(site_dir: Path, *args: str) -> tuple[int, str, str]:
+async def _run(site_dir: Path, *args: str, timeout: int = TIMEOUT) -> tuple[int, str, str]:
     cmd = shlex.split(settings.DOCKER_COMPOSE_CMD) + list(args)
     loop = asyncio.get_running_loop()
 
@@ -24,7 +24,7 @@ async def _run(site_dir: Path, *args: str) -> tuple[int, str, str]:
                 cmd,
                 cwd=str(site_dir),
                 capture_output=True,
-                timeout=TIMEOUT,
+                timeout=timeout,
             )
             return (
                 result.returncode,
@@ -32,7 +32,9 @@ async def _run(site_dir: Path, *args: str) -> tuple[int, str, str]:
                 result.stderr.decode(errors="replace"),
             )
         except subprocess.TimeoutExpired:
-            return -1, "", f"Timed out after {TIMEOUT}s"
+            return -1, "", f"Timed out after {timeout}s"
+        except FileNotFoundError as e:
+            return -1, "", str(e)
 
     return await loop.run_in_executor(None, _blocking)
 
@@ -116,3 +118,31 @@ async def compose_cp_to(site_dir: Path, host_src: Path, service: str, container_
     parent directory must already exist (compose cp won't create it — use
     compose_exec(..., "mkdir", "-p", ...) first if needed)."""
     return await _run(site_dir, "cp", str(host_src), f"{service}:{container_dest}")
+
+
+async def compose_exec_as(
+    site_dir: Path, service: str, user: str, *args: str, timeout: int = TIMEOUT
+) -> tuple[int, str, str]:
+    """compose_exec as a specific container user (e.g. "0:0" for root)."""
+    return await _run(site_dir, "exec", "-T", "--user", user, service, *args, timeout=timeout)
+
+
+async def wp_cli_long(site_dir: Path, *wp_args: str, timeout: int) -> tuple[int, str, str]:
+    """wp_cli with a caller-chosen timeout, for operations that can outlast
+    the default (a full-site backup of a large site)."""
+    return await _run(site_dir, "exec", "-T", "wpcli", "wp", *wp_args, timeout=timeout)
+
+
+async def compose_cp_from(
+    site_dir: Path, service: str, container_src: str, host_dest: Path, timeout: int = TIMEOUT
+) -> tuple[int, str, str]:
+    """`docker compose cp <service>:<container_src> <host_dest>` — copies a
+    file out of a running service's container/volume onto the host."""
+    return await _run(site_dir, "cp", f"{service}:{container_src}", str(host_dest), timeout=timeout)
+
+
+async def compose_ps(site_dir: Path) -> tuple[int, str, str]:
+    """State of every container of the project (including stopped ones), as
+    JSON. Compose prints one object per line (v2.21+) or a single array
+    (older) — callers must accept both."""
+    return await _run(site_dir, "ps", "--all", "--format", "json", timeout=60)

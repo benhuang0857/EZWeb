@@ -441,16 +441,23 @@ async def update_php_config(db: Session, site: Site, user_id: int | None, **fiel
 # ── WP-CLI passthrough ──────────────────────────────────────────────────────
 
 async def _exec_wpcli(
-    db: Session, site: Site, user_id: int | None, args: list[str], op: str
+    db: Session, site: Site, user_id: int | None, args: list[str], op: str,
+    log: bool = True,
 ) -> tuple[int, str, str]:
     """Shared "check running -> run -> log" sequence behind run_wpcli() and
     every cleanup/health function below, so they all log under meaningful
-    per-operation names instead of the generic wpcli:<verb> run_wpcli uses."""
+    per-operation names instead of the generic wpcli:<verb> run_wpcli uses.
+
+    log=False is for read-only queries the UI fires routinely (plugin list,
+    health check): logging each would bury the operations that matter in the
+    site's log, and several of them run concurrently, which one Session
+    can't be written to from."""
     if site.status != "running":
         raise ValueError(f"站台目前狀態為 {site.status}，無法執行 wp-cli 指令")
     site_dir = Path(site.site_path)
     rc, out, err = await docker_runner.wp_cli(site_dir, *args)
-    _log(db, site.id, user_id, op, rc, out, err)
+    if log:
+        _log(db, site.id, user_id, op, rc, out, err)
     return rc, out, err
 
 
@@ -571,27 +578,6 @@ async def execute_cleanup(
         rc, _, _ = await _exec_wpcli(db, site, user_id, ["transient", "delete-expired"], "cleanup-exec-transients")
         deleted["expired_transients"] = None if rc != 0 else 0  # wp-cli doesn't report a count for this one
     return deleted
-
-
-# ── Health ────────────────────────────────────────────────────────────────────
-
-async def check_health(db: Session, site: Site, user_id: int | None) -> dict:
-    """Read-only — no rate limit needed."""
-    installed_rc, _, _ = await _exec_wpcli(db, site, user_id, ["core", "is-installed"], "health-core")
-    checksums_rc, _, _ = await _exec_wpcli(db, site, user_id, ["core", "verify-checksums"], "health-checksums")
-    _, plugin_out, _ = await _exec_wpcli(
-        db, site, user_id, ["plugin", "list", "--update=available", "--format=count"], "health-plugin-updates"
-    )
-    _, theme_out, _ = await _exec_wpcli(
-        db, site, user_id, ["theme", "list", "--update=available", "--format=count"], "health-theme-updates"
-    )
-    return {
-        "site_status": site.status,
-        "wp_installed": installed_rc == 0,
-        "checksums_ok": checksums_rc == 0,
-        "plugin_updates_available": int(plugin_out.strip() or 0),
-        "theme_updates_available": int(theme_out.strip() or 0),
-    }
 
 
 # ── Plugin zip install ──────────────────────────────────────────────────────
@@ -744,6 +730,10 @@ async def delete_site(db: Session, site: Site, user_id: int) -> None:
         # The site is still removed from EZWeb — but say so loudly in the log
         # rather than silently leaking disk space like before.
         _log(db, site.id, user_id, "delete-cleanup", 1, "", leftover)
+
+    # Backup rows cascade with the site row; the files have to go explicitly.
+    from app.sites import backups  # local import: backups imports this module
+    backups.delete_site_backups(site.id)
 
     port_manager.release_ports(db, site.id)
     db.delete(site)

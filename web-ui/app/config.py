@@ -37,7 +37,22 @@ class Settings(BaseSettings):
     # fall back to "localhost" (only reachable from this machine).
     PUBLIC_HOST: str = ""
 
+    # Site backups (All-in-One WP Migration exports), see app/sites/backups.py.
+    # Empty BACKUP_DIR = <EZWeb root>/backups. Point it at another disk if the
+    # system disk is small — every backup is a full copy of the site.
+    BACKUP_DIR: str = ""
+    # A backup that runs longer than this is aborted and marked failed.
+    BACKUP_TIMEOUT_SEC: int = 3600
+    # Refuse to start a backup when the backup disk has less free space.
+    BACKUP_MIN_FREE_MB: int = 2048
+
     # Derived paths (resolved relative to EZWeb root)
+    @property
+    def BACKUPS_DIR(self) -> Path:
+        p = Path(self.BACKUP_DIR) if self.BACKUP_DIR else self.EZWEB_ROOT / "backups"
+        p.mkdir(parents=True, exist_ok=True)
+        return p.resolve()
+
     @property
     def EZWEB_ROOT(self) -> Path:
         return Path(__file__).parent.parent.parent.resolve()

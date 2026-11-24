@@ -11,6 +11,7 @@ from app.database import engine, Base
 from app.models import User  # ensure models are registered
 from app.auth.router import router as auth_router
 from app.sites.router import router as sites_router
+from app.sites.manage_router import router as site_manage_router
 from app.api.router import router as api_router
 from app.wpress.router import router as wpress_router
 from app.auth.service import hash_password
@@ -21,6 +22,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 app.include_router(auth_router)
 app.include_router(sites_router)
+app.include_router(site_manage_router)
 app.include_router(api_router)
 app.include_router(wpress_router)
 
@@ -64,3 +66,15 @@ def startup():
     from app.wpress.service import cleanup_partial_uploads
     if n := cleanup_partial_uploads():
         print(f"[cleanup] Removed {n} interrupted template upload(s)")
+
+    from app.sites import backups
+    if n := backups.fail_interrupted_backups():
+        print(f"[cleanup] Marked {n} interrupted backup(s) as failed")
+
+
+@app.on_event("startup")
+async def start_backup_scheduler():
+    import asyncio
+    from app.sites import backups
+    # Kept on app.state so the task isn't garbage-collected while running.
+    app.state.backup_scheduler = asyncio.create_task(backups.scheduler_loop())

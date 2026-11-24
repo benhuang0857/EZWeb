@@ -1,0 +1,123 @@
+{# Rendered into #backups-body. While a backup is running, the wrapper polls
+   itself so the row flips to 完成/失敗 without a manual refresh. #}
+<div {% if backup_running %}
+     hx-get="/sites/{{ site.id }}/backups" hx-trigger="every 4s"
+     hx-target="#backups-body" hx-swap="innerHTML"
+     {% endif %}>
+
+  {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+  {% if notice %}<div class="alert alert-success">{{ notice }}</div>{% endif %}
+
+  <div class="backup-panels">
+    <!-- Manual -->
+    <div class="panel">
+      <div class="panel-title">手動備份</div>
+      <p class="hint">立即匯出一份完整備份。視站台大小需要數十秒到數分鐘，期間可以離開這個頁面。</p>
+      <button class="btn btn-primary"
+              hx-post="/sites/{{ site.id }}/backups"
+              hx-target="#backups-body" hx-swap="innerHTML"
+              hx-disabled-elt="this"
+              {% if backup_running or site.status != "running" %}disabled{% endif %}>
+        {% if backup_running %}<span class="spinner"></span>備份進行中…{% else %}立即備份{% endif %}
+      </button>
+    </div>
+
+    <!-- Automatic -->
+    <form class="panel"
+          hx-post="/sites/{{ site.id }}/backups/schedule"
+          hx-target="#backups-body" hx-swap="innerHTML">
+      <div class="panel-title">
+        自動備份
+        {% if site.backup_schedule == "off" %}<span class="badge badge-gray">未啟用</span>
+        {% else %}<span class="badge badge-green">已啟用</span>{% endif %}
+      </div>
+      <div class="inline-fields">
+        <label>頻率
+          <select name="schedule" class="input input-sm">
+            <option value="off"    {% if site.backup_schedule == "off" %}selected{% endif %}>關閉</option>
+            <option value="daily"  {% if site.backup_schedule == "daily" %}selected{% endif %}>每天</option>
+            <option value="weekly" {% if site.backup_schedule == "weekly" %}selected{% endif %}>每週</option>
+          </select>
+        </label>
+        <label>執行時間
+          <select name="hour" class="input input-sm">
+            {% for h in range(24) %}
+            <option value="{{ h }}" {% if site.backup_hour == h %}selected{% endif %}>{{ "%02d:00" | format(h) }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>保留份數
+          <input type="number" name="keep" class="input input-sm" min="1" max="50" value="{{ site.backup_keep }}">
+        </label>
+        <button type="submit" class="btn btn-outline btn-sm">儲存</button>
+      </div>
+      <p class="hint">
+        {% if next_run %}下次執行：{{ next_run.strftime("%Y-%m-%d %H:%M") }}（伺服器時間）。{% endif %}
+        超過保留份數時會刪除最舊的自動備份；手動備份不會被自動刪除。站台暫停時不會備份。
+      </p>
+    </form>
+  </div>
+
+  {% if backups %}
+  <table class="table table-flat">
+    <thead>
+      <tr><th>時間</th><th>類型</th><th>大小</th><th>狀態</th><th>操作</th></tr>
+    </thead>
+    <tbody>
+      {% for b, has_file in backups %}
+      <tr>
+        <td>
+          {{ b.created_at | localtime }}
+          {% if b.filename %}<div class="site-id">{{ b.filename }}</div>{% endif %}
+        </td>
+        <td>{% if b.trigger == "auto" %}<span class="badge badge-blue">自動</span>{% else %}<span class="badge badge-purple">手動</span>{% endif %}</td>
+        <td>{% if b.size %}{{ b.size | human_size }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+        <td>
+          {% if b.status == "running" %}
+            <span class="badge badge-yellow badge-pulse">進行中</span>
+          {% elif b.status == "success" %}
+            {% if has_file %}<span class="badge badge-green">完成</span>
+            {% else %}<span class="badge badge-orange" title="資料庫有紀錄，但磁碟上找不到檔案">檔案遺失</span>{% endif %}
+          {% else %}
+            <span class="badge badge-red">失敗</span>
+            {% if b.error %}<div class="error-text">{{ b.error }}</div>{% endif %}
+          {% endif %}
+        </td>
+        <td>
+          <div class="actions">
+            {% if b.status == "success" and has_file %}
+              <a class="btn btn-sm btn-outline" href="/sites/{{ site.id }}/backups/{{ b.id }}/download">下載</a>
+              <details class="inline-details">
+                <summary class="btn btn-sm btn-outline">存為母版</summary>
+                <form class="inline-form"
+                      hx-post="/sites/{{ site.id }}/backups/{{ b.id }}/save-template"
+                      hx-target="#backups-body" hx-swap="innerHTML">
+                  <input type="text" name="name" class="input input-sm" maxlength="100" required
+                         value="{{ site.id }}-{{ b.created_at | localtime('%Y%m%d') }}"
+                         title="只能用英文、數字、. _ -">
+                  <button type="submit" class="btn btn-sm btn-primary">
+                    <span class="spinner busy-only"></span>建立
+                  </button>
+                </form>
+              </details>
+            {% endif %}
+            {% if b.status != "running" %}
+              <button class="btn btn-sm btn-danger"
+                      hx-delete="/sites/{{ site.id }}/backups/{{ b.id }}"
+                      hx-target="#backups-body" hx-swap="innerHTML"
+                      hx-confirm="確定要刪除 {{ b.created_at | localtime }} 的備份？檔案會一併刪除，無法復原。">
+                刪除
+              </button>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-muted empty-inline">還沒有任何備份。</p>
+  {% endif %}
+
+  <p class="hint list-footer">備份存放位置：<code>{{ backup_dir }}</code>　·　磁碟可用空間：{{ backup_free }}</p>
+</div>

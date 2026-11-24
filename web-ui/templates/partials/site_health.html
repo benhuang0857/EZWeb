@@ -1,0 +1,24 @@
+{% if load_error %}
+  <div class="alert alert-error">{{ load_error }}</div>
+{% else %}
+  {% set overall_text = {"ok": "一切正常", "warn": "有項目建議處理", "fail": "有項目需要處理"} %}
+  <div class="health-summary health-{{ report.overall }}">
+    <span class="light light-lg light-{{ report.overall }}"></span>
+    <div>
+      <div class="health-overall">{{ overall_text.get(report.overall, report.overall) }}</div>
+      <div class="hint">
+        正常 {{ report.summary.ok }}　·　注意 {{ report.summary.warn }}　·　異常 {{ report.summary.fail }}
+        　·　檢查時間 {{ checked_at }}
+      </div>
+    </div>
+  </div>
+  <div class="health-grid">
+    {% for c in report.checks %}
+    <div class="health-item health-item-{{ c.status }}">
+      <div class="health-label"><span class="light light-{{ c.status }}"></span>{{ c.label }}</div>
+      <div class="health-value">{{ c.value }}</div>
+      {% if c.detail %}<div class="health-detail">{{ c.detail }}</div>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+{% endif %}

@@ -43,6 +43,8 @@
     {% endif %}
   </td>
   <td class="actions">
+    <a class="btn btn-sm btn-primary" href="/sites/{{ site.id }}"
+       title="外掛、健康檢查、備份">管理</a>
     {% if site.status == "running" %}
       <button class="btn btn-sm btn-warning"
               hx-post="/sites/{{ site.id }}/pause"
@@ -80,7 +82,7 @@
               hx-delete="/sites/{{ site.id }}"
               hx-target="#site-row-{{ site.id }}"
               hx-swap="outerHTML"
-              hx-confirm="確定要刪除「{{ site.display_name }}」？此操作不可逆！">
+              hx-confirm="確定要刪除「{{ site.display_name }}」？站台資料與它的所有備份檔都會刪除，此操作不可逆！">
         刪除
       </button>
     {% endif %}
