@@ -1,0 +1,8 @@
+# Real secrets file generated from .env.org — never commit
+.env
+
+# Docker volume data (bind-mounted at runtime) — keep the dirs, ignore contents
+mysql/*
+!mysql/.keep
+wordpress/*
+!wordpress/.keep

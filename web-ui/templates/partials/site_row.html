@@ -1,0 +1,88 @@
+<tr id="site-row-{{ site.id }}">
+  <td>
+    <strong>{{ site.display_name }}</strong>
+    <div class="site-id">{{ site.id }}</div>
+  </td>
+  <td>{{ site.template_id }}</td>
+  <td>
+    {% if site.status == "running" %}
+      <a href="http://{{ public_host or request.url.hostname }}:{{ site.wp_port }}" target="_blank" class="port-link">{{ site.wp_port }}</a>
+    {% else %}
+      {{ site.wp_port }}
+    {% endif %}
+  </td>
+  <td>
+    {% if site.status == "running" %}
+      <a href="http://{{ public_host or request.url.hostname }}:{{ site.pma_port }}" target="_blank" class="port-link">{{ site.pma_port }}</a>
+    {% else %}
+      {{ site.pma_port }}
+    {% endif %}
+  </td>
+  <td>
+    <div id="domain-cell-{{ site.id }}">
+      {% include "partials/domain_cell.html" %}
+    </div>
+  </td>
+  <td>
+    {% include "partials/stage_badge.html" %}
+    <div class="actions" style="margin-top:6px;">
+      {% set stage_order = [("develop","Develop"),("qa","QA"),("prod","PROD")] %}
+      {% for key, label in stage_order if key != site.current_stage %}
+        <button class="btn btn-xs btn-outline"
+                hx-post="/sites/{{ site.id }}/stage"
+                hx-vals='{"stage":"{{ key }}"}'
+                hx-target="#site-row-{{ site.id }}"
+                hx-swap="outerHTML">→ {{ label }}</button>
+      {% endfor %}
+    </div>
+  </td>
+  <td>
+    {% include "partials/status_badge.html" %}
+    {% if site.error_msg %}
+      <div class="error-hint" title="{{ site.error_msg }}">⚠ 詳情</div>
+    {% endif %}
+  </td>
+  <td class="actions">
+    {% if site.status == "running" %}
+      <button class="btn btn-sm btn-warning"
+              hx-post="/sites/{{ site.id }}/pause"
+              hx-target="#site-row-{{ site.id }}"
+              hx-swap="outerHTML"
+              hx-confirm="確定要暫停「{{ site.display_name }}」？">
+        暫停
+      </button>
+    {% elif site.status == "paused" %}
+      <button class="btn btn-sm btn-success"
+              hx-post="/sites/{{ site.id }}/resume"
+              hx-target="#site-row-{{ site.id }}"
+              hx-swap="outerHTML">
+        恢復
+      </button>
+    {% endif %}
+
+    <button class="btn btn-sm btn-outline"
+            hx-get="/sites/{{ site.id }}/logs"
+            hx-target="#log-panel"
+            hx-swap="innerHTML">
+      日誌
+    </button>
+
+    <button class="btn btn-sm btn-outline"
+            hx-get="/sites/{{ site.id }}/php-config/edit"
+            hx-target="#php-config-modal-body"
+            hx-swap="innerHTML"
+            hx-on::after-request="document.getElementById('php-config-modal').classList.add('open')">
+      PHP 設定
+    </button>
+
+    {% if site.status not in ("creating", "deleting") %}
+      <button class="btn btn-sm btn-danger"
+              hx-delete="/sites/{{ site.id }}"
+              hx-target="#site-row-{{ site.id }}"
+              hx-swap="outerHTML"
+              hx-confirm="確定要刪除「{{ site.display_name }}」？此操作不可逆！">
+        刪除
+      </button>
+    {% endif %}
+  </td>
+</tr>

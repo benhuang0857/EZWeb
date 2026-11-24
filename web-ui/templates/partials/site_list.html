@@ -1,0 +1,26 @@
+{% if sites %}
+<table class="table">
+  <thead>
+    <tr>
+      <th>站台名稱</th>
+      <th>模板</th>
+      <th>WP Port</th>
+      <th>PMA Port</th>
+      <th>域名</th>
+      <th>階段</th>
+      <th>狀態</th>
+      <th>操作</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for site in sites %}
+      {% include "partials/site_row.html" %}
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="empty-state">
+  <p class="empty-title">還沒有任何站台</p>
+  <p>依照上方「快速開始」的步驟，幾分鐘內就能建好第一個 WordPress 站台。</p>
+</div>
+{% endif %}

@@ -1,0 +1,16 @@
+{% set d_dev  = domain_develop if domain_develop is defined else (site.domain_develop or '') %}
+{% set d_qa   = domain_qa   if domain_qa   is defined else (site.domain_qa   or '') %}
+{% set d_prod = domain_prod if domain_prod is defined else (site.domain_prod or '') %}
+<form hx-post="/sites/{{ site.id }}/domains"
+      hx-target="#domain-cell-{{ site.id }}"
+      hx-swap="innerHTML">
+  {% if error %}<div class="error-hint">{{ error }}</div>{% endif %}
+  <input type="text" name="domain_develop" class="input" style="width:140px" placeholder="dev.example.com" value="{{ d_dev }}"><br>
+  <input type="text" name="domain_qa" class="input" style="width:140px" placeholder="qa.example.com" value="{{ d_qa }}"><br>
+  <input type="text" name="domain_prod" class="input" style="width:140px" placeholder="example.com" value="{{ d_prod }}"><br>
+  <button type="submit" class="btn btn-xs btn-primary">儲存</button>
+  <button type="button" class="btn btn-xs btn-outline"
+          hx-get="/sites/{{ site.id }}/domains/view"
+          hx-target="#domain-cell-{{ site.id }}"
+          hx-swap="innerHTML">取消</button>
+</form>

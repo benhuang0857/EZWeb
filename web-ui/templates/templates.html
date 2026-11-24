@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+{% block title %}母版管理 — EZWeb{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h2>母版管理</h2>
+</div>
+
+<div class="card">
+  <h3 class="card-title">上傳母版</h3>
+  <p class="text-muted card-desc">
+    母版是用 WordPress 外掛 <strong>All-in-One WP Migration</strong>「匯出 → 檔案」產生的 <code>.wpress</code> 備份檔。
+    建立站台時，新站台會完整複製母版的佈景主題、外掛、頁面和設定。
+  </p>
+
+  <div id="upload-form">
+    <label class="dropzone" id="dropzone">
+      <input type="file" id="file-input" accept=".wpress" hidden>
+      <span class="dropzone-icon">⬆</span>
+      <span class="dropzone-text" id="dropzone-text">把 <code>.wpress</code> 檔拖到這裡，或<u>點此選擇檔案</u></span>
+      <span class="hint">單檔上限 {{ max_upload_mb }} MB</span>
+    </label>
+
+    <div id="upload-details" hidden>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>母版名稱</label>
+          <input type="text" id="template-name" class="input" maxlength="100">
+          <span class="hint">建立站台時顯示的名稱。只能用英文、數字、<code>.</code> <code>_</code> <code>-</code></span>
+        </div>
+        <div class="form-group">
+          <label>檔案</label>
+          <div class="file-meta" id="file-meta"></div>
+          <label class="checkbox"><input type="checkbox" id="overwrite"> 覆蓋同名母版</label>
+        </div>
+      </div>
+      <div id="upload-msg"></div>
+      <div class="progress progress-lg" id="upload-progress" hidden>
+        <div class="progress-bar" id="upload-bar"></div>
+      </div>
+      <div class="hint" id="upload-status"></div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-outline" id="cancel-btn">取消</button>
+        <button type="button" class="btn btn-primary" id="upload-btn">開始上傳</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="upload-done" hidden>
+    <div class="alert alert-success" id="upload-done-msg"></div>
+    <div class="form-actions form-actions-left">
+      <a href="/?new=1" class="btn btn-primary">下一步：用這個母版建立站台 →</a>
+      <button type="button" class="btn btn-outline" onclick="location.reload()">再上傳一個</button>
+    </div>
+  </div>
+</div>
+
+<h3 class="section-title">已上傳的母版</h3>
+<div id="template-list">
+  {% include "partials/template_list.html" %}
+</div>
+
+<script>
+(() => {
+  const MAX_BYTES = {{ max_upload_mb }} * 1024 * 1024;
+  const HEADER_SIZE = 255 + 14 + 12 + 4096;   // one .wpress entry header
+  const NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+  const $ = (id) => document.getElementById(id);
+
+  let file = null;
+  let xhr = null;
+
+  const fmtSize = (n) => {
+    if (n < 1024 * 1024) return (n / 1024).toFixed(0) + ' KB';
+    if (n < 1024 ** 3) return (n / 1024 / 1024).toFixed(1) + ' MB';
+    return (n / 1024 ** 3).toFixed(2) + ' GB';
+  };
+  const showMsg = (text, kind = 'error') => {
+    $('upload-msg').innerHTML = text ? `<div class="alert alert-${kind}"></div>` : '';
+    if (text) $('upload-msg').firstChild.textContent = text;
+  };
+  // Turn an arbitrary filename into a valid template name suggestion.
+  const suggestName = (filename) => {
+    let s = filename.replace(/\.wpress$/i, '').replace(/[^A-Za-z0-9._-]+/g, '-')
+                    .replace(/-{2,}/g, '-').replace(/^[^A-Za-z0-9]+/, '').slice(0, 100);
+    return s || 'template';
+  };
+
+  // Same check the server does, run before sending so a wrong file fails in
+  // a second instead of after uploading a gigabyte.
+  async function looksLikeWpress(f) {
+    if (f.size < HEADER_SIZE) return false;
+    const b = new Uint8Array(await f.slice(0, HEADER_SIZE).arrayBuffer());
+    const field = (start, len) => {
+      let end = start;
+      while (end < start + len && b[end] !== 0) end++;
+      return b.slice(start, end);
+    };
+    const name = field(0, 255), size = field(255, 14);
+    if (!name.length || ![...name].every((c) => c >= 32 && c < 127)) return false;
+    return size.length > 0 && [...size].every((c) => c >= 48 && c <= 57);
+  }
+
+  async function pick(f) {
+    showMsg('');
+    if (!f) return;
+    if (!/\.wpress$/i.test(f.name)) {
+      showMsg('請選擇 .wpress 檔案（All-in-One WP Migration 匯出的備份檔）。');
+      $('upload-details').hidden = false;
+      return;
+    }
+    if (f.size > MAX_BYTES) {
+      showMsg(`檔案 ${fmtSize(f.size)} 超過上限 ${fmtSize(MAX_BYTES)}。`);
+      $('upload-details').hidden = false;
+      return;
+    }
+    if (!(await looksLikeWpress(f))) {
+      showMsg('這個檔案看起來不是有效的 .wpress 備份，請確認是用 All-in-One WP Migration 匯出的。');
+      $('upload-details').hidden = false;
+      return;
+    }
+    file = f;
+    $('template-name').value = suggestName(f.name);
+    $('file-meta').textContent = `${f.name}（${fmtSize(f.size)}）`;
+    $('dropzone-text').textContent = '已選擇：' + f.name;
+    $('upload-details').hidden = false;
+    $('upload-btn').disabled = false;
+  }
+
+  function reset() {
+    if (xhr) xhr.abort();
+    xhr = null; file = null;
+    $('file-input').value = '';
+    $('upload-details').hidden = true;
+    $('upload-progress').hidden = true;
+    $('upload-status').textContent = '';
+    $('dropzone-text').innerHTML = '把 <code>.wpress</code> 檔拖到這裡，或<u>點此選擇檔案</u>';
+    showMsg('');
+  }
+
+  function upload() {
+    if (!file) return;
+    const name = $('template-name').value.trim();
+    if (!NAME_RE.test(name)) {
+      showMsg('母版名稱只能使用英文字母、數字、點、底線和連字號，且必須以英文字母或數字開頭。');
+      return;
+    }
+    showMsg('');
+    $('upload-btn').disabled = true;
+    $('upload-progress').hidden = false;
+    $('upload-bar').style.width = '0%';
+
+    const started = Date.now();
+    const params = new URLSearchParams({ name, overwrite: $('overwrite').checked ? 'true' : 'false' });
+    xhr = new XMLHttpRequest();
+    xhr.open('POST', '/templates/upload?' + params);
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+    xhr.upload.onprogress = (e) => {
+      if (!e.lengthComputable) return;
+      const pct = (e.loaded / e.total) * 100;
+      const secs = (Date.now() - started) / 1000;
+      const speed = e.loaded / Math.max(secs, 0.1);
+      const left = (e.total - e.loaded) / Math.max(speed, 1);
+      $('upload-bar').style.width = pct.toFixed(1) + '%';
+      $('upload-status').textContent =
+        `${pct.toFixed(0)}%　${fmtSize(e.loaded)} / ${fmtSize(e.total)}　·　${fmtSize(speed)}/s` +
+        (pct < 100 ? `　·　約剩 ${left < 60 ? Math.ceil(left) + ' 秒' : Math.ceil(left / 60) + ' 分鐘'}` : '　·　伺服器處理中…');
+    };
+    xhr.onload = () => {
+      let data = {};
+      try { data = JSON.parse(xhr.responseText); } catch (e) {}
+      if (xhr.status === 200) {
+        $('upload-form').hidden = true;
+        $('upload-done').hidden = false;
+        $('upload-done-msg').textContent = `母版「${data.name}」上傳完成（${data.size}）。`;
+        htmx.ajax('GET', '/templates/list-fragment', { target: '#template-list', swap: 'innerHTML' });
+      } else {
+        showMsg(data.error || `上傳失敗（HTTP ${xhr.status}）`);
+        $('upload-btn').disabled = false;
+        $('upload-progress').hidden = true;
+        $('upload-status').textContent = '';
+      }
+      xhr = null;
+    };
+    xhr.onerror = () => {
+      showMsg('上傳失敗：連線中斷。請確認網路後重試。');
+      $('upload-btn').disabled = false;
+      xhr = null;
+    };
+    xhr.send(file);
+  }
+
+  // Leaving mid-upload would silently throw the upload away.
+  window.addEventListener('beforeunload', (e) => {
+    if (xhr) { e.preventDefault(); e.returnValue = ''; }
+  });
+
+  $('file-input').addEventListener('change', (e) => pick(e.target.files[0]));
+  $('upload-btn').addEventListener('click', upload);
+  $('cancel-btn').addEventListener('click', reset);
+
+  const dz = $('dropzone');
+  ['dragenter', 'dragover'].forEach((ev) => dz.addEventListener(ev, (e) => {
+    e.preventDefault(); dz.classList.add('dragover');
+  }));
+  ['dragleave', 'drop'].forEach((ev) => dz.addEventListener(ev, (e) => {
+    e.preventDefault(); dz.classList.remove('dragover');
+  }));
+  dz.addEventListener('drop', (e) => pick(e.dataTransfer.files[0]));
+})();
+</script>
+{% endblock %}

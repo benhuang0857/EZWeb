@@ -1,0 +1,36 @@
+<div class="modal-header">
+  <h3>PHP 設定 — {{ site.display_name }}</h3>
+  <button type="button" class="modal-close" onclick="document.getElementById('php-config-modal').classList.remove('open')">&times;</button>
+</div>
+
+<form hx-post="/sites/{{ site.id }}/php-config"
+      hx-target="#php-config-modal-body"
+      hx-swap="innerHTML">
+  {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+  {% if success %}<div class="alert alert-success">{{ success }}</div>{% endif %}
+
+  <div class="form-group">
+    <label>Memory Limit <span class="hint">（例如 512M、2048M）</span></label>
+    <input type="text" name="memory_limit" class="input" value="{{ values.memory_limit }}" required>
+  </div>
+  <div class="form-group">
+    <label>Upload Max Filesize <span class="hint">（例如 512M、2048M）</span></label>
+    <input type="text" name="upload_max_filesize" class="input" value="{{ values.upload_max_filesize }}" required>
+  </div>
+  <div class="form-group">
+    <label>Post Max Size <span class="hint">（例如 512M、2048M）</span></label>
+    <input type="text" name="post_max_size" class="input" value="{{ values.post_max_size }}" required>
+  </div>
+  <div class="form-group">
+    <label>Max Execution Time <span class="hint">（秒）</span></label>
+    <input type="text" name="max_execution_time" class="input" value="{{ values.max_execution_time }}" required>
+  </div>
+
+  <p class="hint">儲存後會 restart 這個站台的 wordpress 跟 wpcli 容器套用新設定，網站會短暫中斷幾秒。</p>
+
+  <div class="modal-footer">
+    <button type="button" class="btn btn-outline"
+            onclick="document.getElementById('php-config-modal').classList.remove('open')">關閉</button>
+    <button type="submit" class="btn btn-primary">儲存並套用</button>
+  </div>
+</form>

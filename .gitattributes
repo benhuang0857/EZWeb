@@ -1,0 +1,9 @@
+# Everything is checked out with LF endings, on Windows too. These files are
+# copied to / built into Linux containers, where a CRLF shebang fails with
+# "exec /scripts/entrypoint.sh: no such file or directory" and a CRLF
+# Dockerfile/Makefile/.env breaks in subtler ways. text=auto leaves binaries
+# (zip, wpress, images) untouched.
+* text=auto eol=lf
+
+# Windows batch files are the one thing that needs CRLF.
+*.bat text eol=crlf

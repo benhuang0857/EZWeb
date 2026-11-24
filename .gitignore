@@ -1,0 +1,16 @@
+/EZWeb.bk/
+/sites/
+/theme/
+note.md
+
+# secrets / runtime config
+web-ui/.env
+
+# runtime data (contains password hashes / plaintext site passwords)
+web-ui/data/
+
+# python build artifacts
+__pycache__/
+*.pyc
+# paid third-party plugin — keep locally, never publish
+/plugin/elementor-pro*.zip

@@ -1,0 +1,130 @@
+{# First-run guide. Rendered on the dashboard and re-fetched from
+   /onboarding-fragment while a site is building, so step 4 flips to done
+   on its own. Visibility (hidden/shown) is a per-browser preference. #}
+{% set host = public_host or request.url.hostname %}
+<div id="onboarding"
+     class="guide{% if guide.complete %} guide-complete{% endif %}"
+     data-complete="{{ 'true' if guide.complete else 'false' }}"
+     {% if guide.building %}hx-get="/onboarding-fragment" hx-trigger="every 5s" hx-swap="outerHTML"{% endif %}>
+
+  <div class="guide-collapsed">
+    <button type="button" class="btn btn-sm btn-outline" onclick="ezGuide.show()">
+      📋 顯示快速開始（{{ guide.done_count }}/{{ guide.steps|length }}）
+    </button>
+  </div>
+
+  <div class="guide-card">
+    <div class="guide-header">
+      <div>
+        <h3>{% if guide.complete %}🎉 設定完成！{% else %}快速開始{% endif %}</h3>
+        <p class="text-muted">
+          {% if guide.complete %}
+            你的第一個站台已經在運行了。
+          {% else %}
+            跟著以下 {{ guide.steps|length }} 個步驟，建立你的第一個 WordPress 站台。
+          {% endif %}
+        </p>
+      </div>
+      <div class="guide-progress">
+        <span>{{ guide.done_count }} / {{ guide.steps|length }} 完成</span>
+        <div class="progress"><div class="progress-bar" style="width: {{ (guide.done_count * 100 / guide.steps|length)|round }}%"></div></div>
+        <button type="button" class="btn btn-xs btn-outline" onclick="ezGuide.hide()">
+          {% if guide.complete %}關閉{% else %}先隱藏{% endif %}
+        </button>
+      </div>
+    </div>
+
+    <ol class="guide-steps">
+      {% for step in guide.steps %}
+      {% set state = "done" if step.done else ("current" if step.key == guide.current else "todo") %}
+      <li class="guide-step guide-step-{{ state }}">
+        <div class="guide-marker">{% if step.done %}✓{% else %}{{ loop.index }}{% endif %}</div>
+        <div class="guide-body">
+          <div class="guide-title">{{ step.title }}</div>
+
+          {% if step.key == "password" %}
+            {% if step.done %}
+              <p class="guide-summary">已改用自訂密碼。</p>
+            {% elif state == "current" %}
+              <p>EZWeb 的預設帳密是 <code>admin</code> / <code>admin</code>，任何知道這個預設值的人都能登入並刪除你的站台。先換成只有你知道的密碼。</p>
+              <a href="/account/password" class="btn btn-primary btn-sm">修改密碼 →</a>
+            {% endif %}
+
+          {% elif step.key == "template" %}
+            {% if step.done %}
+              <p class="guide-summary">已有 {{ templates_list|length }} 個母版：{{ templates_list|join("、") }}</p>
+            {% elif state == "current" %}
+              <p><strong>母版</strong>是建立新站台的起點：一個用 WordPress 外掛 <em>All-in-One WP Migration</em> 匯出的 <code>.wpress</code> 備份檔。新站台會完整複製母版的佈景主題、外掛、頁面和設定。</p>
+              <p class="guide-howto-title">還沒有 .wpress 檔？</p>
+              <ol class="guide-howto">
+                <li>在一個已經做好的 WordPress 網站，安裝並啟用 <strong>All-in-One WP Migration</strong> 外掛</li>
+                <li>進入後台「All-in-One WP Migration → 匯出」，選「匯出至 → 檔案」，下載 <code>.wpress</code> 檔</li>
+                <li>回到這裡，把檔案上傳成母版</li>
+              </ol>
+              <a href="/templates" class="btn btn-primary btn-sm">前往上傳母版 →</a>
+            {% endif %}
+
+          {% elif step.key == "site" %}
+            {% if step.done %}
+              <p class="guide-summary">已建立 {{ sites|length }} 個站台。</p>
+            {% elif state == "current" %}
+              <p>點「新增站台」，填寫以下欄位：</p>
+              <ul class="guide-fields">
+                <li><strong>站台名稱</strong>：EZWeb 裡辨識用的名稱，建議用英文，例如 <code>my-shop</code></li>
+                <li><strong>網站標題</strong>：顯示在網站上的名稱，可以用中文</li>
+                <li><strong>模板</strong>：選擇剛上傳的母版</li>
+                <li><strong>WordPress 管理員</strong>：之後登入這個站台後台（<code>/wp-admin</code>）用的帳號密碼。<em>這不是 EZWeb 的帳號</em>，請記下來</li>
+              </ul>
+              <p class="text-muted">「進階設定」可以先略過，port 會自動分配，網域之後也能再設定。</p>
+              <button type="button" class="btn btn-primary btn-sm" onclick="openCreateModal()">+ 新增站台</button>
+            {% else %}
+              <p class="guide-summary">完成上一步後就能建立站台。</p>
+            {% endif %}
+
+          {% elif step.key == "running" %}
+            {% if step.done %}
+              {% set s = guide.running_site %}
+              <p class="guide-summary">「{{ s.display_name }}」正在運行。</p>
+              <div class="guide-links">
+                <a href="http://{{ host }}:{{ s.wp_port }}" target="_blank" class="btn btn-success btn-sm">開啟網站 ↗</a>
+                <a href="http://{{ host }}:{{ s.wp_port }}/wp-admin" target="_blank" class="btn btn-outline btn-sm">登入 WordPress 後台 ↗</a>
+              </div>
+              <p class="hint">後台出現 404？代表母版用外掛（例如 WP Adminify）改了登入網址，請改用母版設定的網址，例如 <code>/admin</code>。</p>
+            {% elif state == "current" and guide.has_error %}
+              <div class="alert alert-error">站台建置失敗。</div>
+              <p>點該站台的「日誌」按鈕查看錯誤訊息。常見原因：</p>
+              <ul class="guide-fields">
+                <li>磁碟空間不足（每個站台會複製一份母版，再加上資料庫）</li>
+                <li>伺服器無法連到網路，下載不了 Docker 映像檔</li>
+                <li>母版檔案損毀，請重新匯出後再上傳</li>
+              </ul>
+              <p>排除問題後，刪除失敗的站台並重新建立。</p>
+            {% elif state == "current" %}
+              <p><span class="spinner"></span> 站台正在建置中（狀態顯示「建立中」）。</p>
+              <p>EZWeb 會下載 WordPress、MariaDB 和 phpMyAdmin 的 Docker 映像檔，再把母版還原進去。<strong>第一次建站通常需要 5–15 分鐘</strong>，視母版大小和網路速度而定。這個頁面會自動更新，不用重新整理。</p>
+              <p class="text-muted">完成後狀態會變成「運行中」，點「WP Port」的數字就能開啟網站，用你在上一步設定的 WordPress 管理員帳密登入後台。</p>
+            {% else %}
+              <p class="guide-summary">建立站台後，等它變成「運行中」就能開啟。</p>
+            {% endif %}
+          {% endif %}
+        </div>
+      </li>
+      {% endfor %}
+    </ol>
+
+    {% if guide.complete %}
+    <div class="guide-next">
+      <p class="guide-howto-title">接下來可以：</p>
+      <ul class="guide-fields">
+        <li><strong>綁定網域</strong>：點站台的「域名」欄位設定。EZWeb 會產生 nginx 設定檔，DNS 和 HTTPS 憑證需要另外設定</li>
+        <li><strong>切換階段</strong>：用「→ QA」「→ PROD」按鈕，把站台從開發推進到正式上線</li>
+        <li><strong>調整 PHP</strong>：在「PHP 設定」調高上傳大小或記憶體上限</li>
+      </ul>
+    </div>
+    {% endif %}
+  </div>
+</div>
+<script>
+  // Re-run after every htmx swap of this fragment.
+  ezGuide.apply();
+</script>

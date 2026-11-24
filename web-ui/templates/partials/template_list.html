@@ -1,0 +1,38 @@
+{% if template_infos %}
+<table class="table">
+  <thead>
+    <tr>
+      <th>母版名稱</th>
+      <th>大小</th>
+      <th>上傳時間</th>
+      <th>使用中的站台</th>
+      <th>操作</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for t in template_infos %}
+    <tr>
+      <td><strong>{{ t.name }}</strong></td>
+      <td>{{ t.size_human }}</td>
+      <td class="text-muted">{{ t.modified.strftime("%Y-%m-%d %H:%M") }}</td>
+      <td>{% if t.used_by %}{{ t.used_by }} 個{% else %}<span class="text-muted">—</span>{% endif %}</td>
+      <td class="actions">
+        <button class="btn btn-sm btn-danger"
+                hx-delete="/templates/{{ t.name }}"
+                hx-target="#template-list"
+                hx-swap="innerHTML"
+                hx-confirm="確定要刪除母版「{{ t.name }}」？已經建立的站台不受影響（它們各自保存了一份）。">
+          刪除
+        </button>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="empty-state">
+  <p class="empty-title">還沒有母版</p>
+  <p>從上方上傳第一個 <code>.wpress</code> 檔。</p>
+</div>
+{% endif %}
+<p class="hint list-footer">磁碟可用空間：{{ free_space }}　·　每個站台建立時會複製一份母版，請預留足夠空間。</p>

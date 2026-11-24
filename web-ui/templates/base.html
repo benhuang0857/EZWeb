@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}EZWeb{% endblock %}</title>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  {% block nav %}
+  <nav class="navbar">
+    <div class="nav-left">
+      <a href="/" class="nav-brand">EZWeb</a>
+      {% if user is defined %}
+        <a href="/" class="nav-link {% if active_nav == 'sites' %}active{% endif %}">站台</a>
+        <a href="/templates" class="nav-link {% if active_nav == 'templates' %}active{% endif %}">母版</a>
+      {% endif %}
+    </div>
+    <div class="nav-right">
+      {% if user is defined %}
+        {% if default_pw %}
+          <a href="/account/password" class="nav-warning" title="你還在使用預設密碼 admin">⚠ 請修改預設密碼</a>
+        {% endif %}
+        <span class="nav-user">{{ user.username }}</span>
+        <a href="/account/password" class="btn btn-sm btn-outline">修改密碼</a>
+        <form method="post" action="/logout" style="display:inline">
+          <button type="submit" class="btn btn-sm btn-outline">登出</button>
+        </form>
+      {% endif %}
+    </div>
+  </nav>
+  {% endblock %}
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

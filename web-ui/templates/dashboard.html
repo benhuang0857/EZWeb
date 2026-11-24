@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+{% block title %}站台管理 — EZWeb{% endblock %}
+{% block content %}
+
+<script>
+  function openCreateModal() {
+    document.getElementById('create-modal').classList.add('open');
+  }
+  // First-run guide visibility is a per-browser preference. Storage can be
+  // unavailable (private mode, blocked site data) — then it just stays shown.
+  const ezGuide = {
+    key: 'ezweb-guide-hidden',
+    hidden() { try { return localStorage.getItem(this.key) === '1'; } catch (e) { return false; } },
+    apply() {
+      const el = document.getElementById('onboarding');
+      if (!el) return;
+      const hidden = this.hidden();
+      el.classList.toggle('is-hidden', hidden);
+      el.style.display = (hidden && el.dataset.complete === 'true') ? 'none' : '';
+    },
+    hide() { try { localStorage.setItem(this.key, '1'); } catch (e) {} this.apply(); },
+    show() { try { localStorage.removeItem(this.key); } catch (e) {} this.apply(); },
+  };
+  // /?new=1 (linked from the template page after an upload) opens the form.
+  document.addEventListener('DOMContentLoaded', () => {
+    if (new URLSearchParams(location.search).has('new')) openCreateModal();
+  });
+</script>
+
+<div class="page-header">
+  <h2>站台管理</h2>
+  <button class="btn btn-primary" onclick="openCreateModal()">
+    + 新增站台
+  </button>
+</div>
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+{% if request.query_params.get("password_changed") %}
+<div class="alert alert-success">密碼已更新。</div>
+{% endif %}
+{% if request.query_params.get("created") %}
+<div class="alert alert-success">站台已開始建置！第一次建站通常需要 5–15 分鐘，狀態變成「運行中」後就能開啟。</div>
+{% endif %}
+
+{% include "partials/onboarding.html" %}
+
+<!-- Sites list (htmx auto-refresh every 5s when any site is creating/deleting) -->
+<div id="sites-list"
+     hx-get="/sites/list-fragment"
+     hx-trigger="every 5s"
+     hx-swap="innerHTML">
+  {% include "partials/site_list.html" %}
+</div>
+
+<!-- ── Create Modal ─────────────────────────────────────────────── -->
+<div id="create-modal" class="modal-overlay" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>新增站台</h3>
+      <button class="modal-close" onclick="document.getElementById('create-modal').classList.remove('open')">&times;</button>
+    </div>
+
+    {% if not templates_list %}
+    <div class="modal-body">
+      <div class="notice">
+        <p class="notice-title">需要先上傳母版</p>
+        <p>建立站台時會以「母版」（All-in-One WP Migration 匯出的 <code>.wpress</code> 檔）為內容起點，目前還沒有任何母版。</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline"
+                onclick="document.getElementById('create-modal').classList.remove('open')">取消</button>
+        <a href="/templates" class="btn btn-primary">前往上傳母版 →</a>
+      </div>
+    </div>
+    {% else %}
+    <form method="post" action="/sites"
+          hx-post="/sites"
+          hx-disabled-elt="find button[type=submit]">
+
+      <div id="create-error"></div>
+
+      <div class="form-grid">
+        <div class="form-group">
+          <label>站台名稱 <span class="req">*</span></label>
+          <input type="text" name="display_name" class="input" placeholder="my-shop" required>
+          <span class="hint">EZWeb 裡辨識用，建議英文</span>
+        </div>
+        <div class="form-group">
+          <label>網站標題 <span class="req">*</span></label>
+          <input type="text" name="wp_title" class="input" placeholder="我的商店" required>
+          <span class="hint">顯示在網站上，可用中文</span>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>模板 <span class="req">*</span></label>
+        <select name="template_id" class="input" required>
+          {% for t in templates_list %}
+          <option value="{{ t }}">{{ t }}</option>
+          {% endfor %}
+        </select>
+        <span class="hint">新站台會複製這個母版的佈景主題、外掛和內容。<a href="/templates">管理母版</a></span>
+      </div>
+
+      <hr class="divider">
+      <p class="section-label">WordPress 管理員</p>
+      <p class="hint section-hint">登入這個站台後台（/wp-admin）用的帳號，不是 EZWeb 的帳號。請記下來。</p>
+
+      <div class="form-grid">
+        <div class="form-group">
+          <label>帳號 <span class="req">*</span></label>
+          <input type="text" name="wp_admin_user" class="input" value="admin" required>
+        </div>
+        <div class="form-group">
+          <label>Email <span class="req">*</span></label>
+          <input type="email" name="wp_admin_email" class="input" placeholder="admin@example.com" required>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>密碼 <span class="req">*</span></label>
+        <input type="password" name="wp_admin_pass" class="input" required>
+      </div>
+
+      <hr class="divider">
+      <p class="section-label">進階設定（選填）</p>
+
+      <div class="form-group">
+        <label>初始階段</label>
+        <select name="stage" class="input">
+          <option value="develop">Develop</option>
+          <option value="qa">QA</option>
+          <option value="prod">PROD</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Develop 域名 <span class="hint">（選填，填入後自動生成 nginx config）</span></label>
+        <input type="text" name="domain_develop" class="input" placeholder="dev.example.com">
+      </div>
+      <div class="form-group">
+        <label>QA 域名 <span class="hint">（選填）</span></label>
+        <input type="text" name="domain_qa" class="input" placeholder="qa.example.com">
+      </div>
+      <div class="form-group">
+        <label>PROD 域名 <span class="hint">（選填）</span></label>
+        <input type="text" name="domain_prod" class="input" placeholder="example.com">
+      </div>
+
+      <div class="form-grid">
+        <div class="form-group">
+          <label>WordPress Port <span class="hint">（留空自動分配）</span></label>
+          <input type="number" name="wp_port" class="input" placeholder="自動">
+        </div>
+        <div class="form-group">
+          <label>phpMyAdmin Port <span class="hint">（留空自動分配）</span></label>
+          <input type="number" name="pma_port" class="input" placeholder="自動">
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline"
+                onclick="document.getElementById('create-modal').classList.remove('open')">取消</button>
+        <button type="submit" class="btn btn-primary">建立站台</button>
+      </div>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Log panel (filled by htmx) -->
+<div id="log-panel"></div>
+
+<!-- ── PHP Config Modal ─────────────────────────────────────────── -->
+<div id="php-config-modal" class="modal-overlay" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal-box" id="php-config-modal-body">
+    <!-- filled by hx-get on /sites/{id}/php-config/edit -->
+  </div>
+</div>
+
+{% endblock %}

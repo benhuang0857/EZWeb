@@ -1,0 +1,10 @@
+{% set status_map = {
+  "pending":  ("badge-yellow", "等待中"),
+  "creating": ("badge-yellow badge-pulse", "建立中"),
+  "running":  ("badge-green", "運行中"),
+  "paused":   ("badge-gray", "已暫停"),
+  "error":    ("badge-red", "錯誤"),
+  "deleting": ("badge-orange badge-pulse", "刪除中"),
+} %}
+{% set cls, label = status_map.get(site.status, ("badge-gray", site.status)) %}
+<span class="badge {{ cls }}">{{ label }}</span>

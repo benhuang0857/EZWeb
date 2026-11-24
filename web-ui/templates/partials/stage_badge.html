@@ -1,0 +1,7 @@
+{% set stage_map = {
+  "develop": ("badge-blue", "Develop"),
+  "qa":      ("badge-purple", "QA"),
+  "prod":    ("badge-green", "PROD"),
+} %}
+{% set cls, label = stage_map.get(site.current_stage, ("badge-gray", site.current_stage)) %}
+<span class="badge {{ cls }}">{{ label }}</span>

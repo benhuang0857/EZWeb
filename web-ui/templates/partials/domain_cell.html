@@ -1,0 +1,20 @@
+{% set doms = [("Develop","badge-blue",site.domain_develop),
+                ("QA","badge-purple",site.domain_qa),
+                ("PROD","badge-green",site.domain_prod)] %}
+{% set any_domain = site.domain_develop or site.domain_qa or site.domain_prod %}
+{% for label, cls, val in doms if val %}
+  <span class="badge {{ cls }}" title="{{ val }}">{{ label }}</span>
+{% endfor %}
+{% if not any_domain %}
+  <span class="text-muted">—</span>
+{% else %}
+  <br><a href="/sites/{{ site.id }}/nginx-config" class="btn btn-xs btn-outline">下載 nginx</a>
+{% endif %}
+{% if warning %}
+  <div class="error-hint" title="{{ warning }}">⚠ siteurl 同步失敗，詳見日誌</div>
+{% endif %}
+<br>
+<button class="btn btn-xs btn-outline"
+        hx-get="/sites/{{ site.id }}/domains/edit"
+        hx-target="#domain-cell-{{ site.id }}"
+        hx-swap="innerHTML">編輯</button>
